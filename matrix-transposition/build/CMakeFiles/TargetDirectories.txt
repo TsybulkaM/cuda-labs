@@ -1,3 +1,0 @@
-/home/mikita/Programming/cuda-labs/matrix-transposition/build/CMakeFiles/cuda_app.dir
-/home/mikita/Programming/cuda-labs/matrix-transposition/build/CMakeFiles/edit_cache.dir
-/home/mikita/Programming/cuda-labs/matrix-transposition/build/CMakeFiles/rebuild_cache.dir
