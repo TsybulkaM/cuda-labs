@@ -3,3 +3,4 @@
 
 # Linter
 .cache/*
+*/.cache/*

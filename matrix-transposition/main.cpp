@@ -4,7 +4,7 @@
 #include <cstring>
 #include <cuda_runtime.h>
 
-#include "cuda_common.cuh"
+#include "cuda_check.cuh"
 #include "matrix.h"
 #include "transposition.h"
 #include "transposition.cuh"

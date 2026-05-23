@@ -1,5 +1,5 @@
 #include <cuda_runtime.h>
-#include "cuda_common.cuh"
+#include "cuda_check.cuh"
 #include "transposition.cuh"
 
 __global__ void transpose_kernel_naive(const float* input, float* output, int rows, int cols) {
