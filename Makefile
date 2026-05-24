@@ -9,7 +9,7 @@ clean: clean-mt clean-ic
 # ==== Matrix Transposition ====
 
 build-mt:
-	cd matrix-transposition && mkdir -p build && cd build && cmake ${CMAKE_FLAGS} .. && ninja
+	cd matrix-transposition && cmake --build build
 
 clean-mt:
 	rm -rf matrix-transposition/build
@@ -17,7 +17,7 @@ clean-mt:
 # ==== Image Convolution ====
 
 build-ic:
-	cd image-convolution && mkdir -p build && cd build && cmake ${CMAKE_FLAGS} .. && ninja
+	cd image-convolution && cmake --build build
 
 clean-ic:
 	rm -rf image-convolution/build

@@ -19,6 +19,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../cuda_common ${CMAKE_CURRENT_BINA
 
 add_library(objs OBJECT ${COMMON_SOURCES})
 target_include_directories(objs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_options(objs PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-U_GNU_SOURCE>)
 target_link_libraries(objs PRIVATE cuda_common)
 
 set(M_LIST 1024 2048 4096 8192)
