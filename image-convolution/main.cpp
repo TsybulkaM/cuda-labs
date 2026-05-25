@@ -85,6 +85,17 @@ int main()
     printf("    CPU/GPU Naive Speedup: %.2fx | CPU/GPU Shared Speedup: %.2fx | Shared vs Naive: %.2fx\n",
            cpu_time_ms / gpu_time_ms, cpu_time_ms / gpu_opt_time_ms, gpu_time_ms / gpu_opt_time_ms);
 
+    cudaEventRecord(start);
+    convolutionGPUSeparable(&original_image, &tmp_image, gaussianBlur5x5);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&gpu_opt_time_ms, start, stop);
+    printf("    GPU Separable (Gaussian Blur 5x5) Time: %.4f ms\n", gpu_opt_time_ms);
+    saveImage("images/cat_gaussian_blurred_gpu_separable.png", tmp_image);
+
+    printf("    CPU/GPU Naive Speedup: %.2fx | CPU/GPU Shared Speedup: %.2fx | Shared vs Naive: %.2fx\n",
+           cpu_time_ms / gpu_time_ms, cpu_time_ms / gpu_opt_time_ms, gpu_time_ms / gpu_opt_time_ms);
+
     // === SOBEL X ===
     printf("Sobel X\n");
 
