@@ -65,14 +65,6 @@ int main() {
     }
 
     printf("\nGPU Transpose (Optimized, Unified Memory):\n");
-    cudaDeviceProp prop;
-    CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
-    int block_size = 16;
-    if (prop.multiProcessorCount >= 40) {
-        block_size = 32;
-    } else if (prop.multiProcessorCount <= 10) {
-        block_size = 8;
-    }
 
     float* um_input = nullptr;
     float* um_output = nullptr;
@@ -89,7 +81,7 @@ int main() {
     CUDA_CHECK(cudaDeviceSynchronize());
 
     auto gpu_opt_start = std::chrono::high_resolution_clock::now();
-    transpose_gpu_optimized(um_input, um_output, N, M, block_size);
+    transpose_gpu_optimized(um_input, um_output, N, M);
     auto gpu_opt_end = std::chrono::high_resolution_clock::now();
     double gpu_opt_time_ms = std::chrono::duration<double, std::milli>(gpu_opt_end - gpu_opt_start).count();
 
@@ -98,7 +90,6 @@ int main() {
 
     memcpy(h_transposed, um_output, matrix_bytes);
     bool optimized_ok = verify_transpose(h_matrix, h_transposed, N, M);
-    printf("  Selected block size (SM occupancy): %d x %d\n", block_size, block_size);
     printf("  Time: %.4f ms\n", gpu_opt_time_ms);
     printf("  Speedup vs CPU: %.2fx\n", cpu_time_ms / gpu_opt_time_ms);
     printf("  Improvement vs naive: %.2fx\n", gpu_time_ms / gpu_opt_time_ms);

@@ -1,5 +1,6 @@
 #include <cuda_runtime.h>
 #include "cuda_check.cuh"
+#include "cuda_const.cuh"
 #include "transposition.cuh"
 
 __global__ void transpose_kernel_naive(const float* input, float* output, int rows, int cols) {
@@ -12,11 +13,8 @@ __global__ void transpose_kernel_naive(const float* input, float* output, int ro
 }
 
 void transpose_gpu_naive(const float* d_input, float* d_output, int rows, int cols) {
-    int block_x = 32;
-    int block_y = 32;
-    
-    dim3 block_dim(block_x, block_y);
-    dim3 grid_dim((cols + block_x - 1) / block_x, (rows + block_y - 1) / block_y);
+    dim3 block_dim(CUDA_BLOCK_SIZE, CUDA_BLOCK_SIZE);
+    dim3 grid_dim((cols + CUDA_BLOCK_SIZE - 1) / CUDA_BLOCK_SIZE, (rows + CUDA_BLOCK_SIZE - 1) / CUDA_BLOCK_SIZE);
     
     transpose_kernel_naive<<<grid_dim, block_dim>>>(d_input, d_output, rows, cols);
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -45,11 +43,11 @@ __global__ void transpose_kernel_optimized(const float* input, float* output, in
     }
 }
 
-void transpose_gpu_optimized(const float* d_input, float* d_output, int rows, int cols, int block_size) {
-    dim3 block_dim(block_size, block_size);
-    dim3 grid_dim((cols + block_size - 1) / block_size, (rows + block_size - 1) / block_size);
+void transpose_gpu_optimized(const float* d_input, float* d_output, int rows, int cols) {
+    dim3 block_dim(CUDA_BLOCK_SIZE, CUDA_BLOCK_SIZE);
+    dim3 grid_dim((cols + CUDA_BLOCK_SIZE - 1) / CUDA_BLOCK_SIZE, (rows + CUDA_BLOCK_SIZE - 1) / CUDA_BLOCK_SIZE);
     
-    size_t smem_size = (block_size * (block_size + 1)) * sizeof(float);
+    size_t smem_size = (CUDA_BLOCK_SIZE * (CUDA_BLOCK_SIZE + 1)) * sizeof(float);
     
     transpose_kernel_optimized<<<grid_dim, block_dim, smem_size>>>(d_input, d_output, rows, cols);
     CUDA_CHECK(cudaDeviceSynchronize());

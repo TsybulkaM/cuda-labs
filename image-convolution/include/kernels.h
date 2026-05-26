@@ -1,11 +1,12 @@
 #pragma once
 
-typedef struct
-{
-    unsigned char *data;
-    int width;
-    int height;
-    int channels; // 1 for grayscale, 3 for RGB, 4 for RGBA
+#include <stdint.h>
+
+typedef struct {
+  uint8_t *data;
+  int width;
+  int height;
+  int channels; // 1 for grayscale, 3 for RGB, 4 for RGBA
 } Image;
 
 bool loadImage(const char* filename, Image& img);

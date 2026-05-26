@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.18)
 project(MatrixTransposition LANGUAGES CXX CUDA)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CUDA_STANDARD 20)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 set(CMAKE_CUDA_ARCHITECTURES 75)
@@ -19,7 +20,6 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../cuda_common ${CMAKE_CURRENT_BINA
 
 add_library(objs OBJECT ${COMMON_SOURCES})
 target_include_directories(objs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_compile_options(objs PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-U_GNU_SOURCE>)
 target_link_libraries(objs PRIVATE cuda_common)
 
 set(M_LIST 1024 2048 4096 8192)

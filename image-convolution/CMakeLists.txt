@@ -29,7 +29,6 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../cuda_common ${CMAKE_CURRENT_BINA
 
 add_library(objs OBJECT ${COMMON_SOURCES})
 target_include_directories(objs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${stb_SOURCE_DIR})
-target_compile_options(objs PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-U_GNU_SOURCE>)
 target_link_libraries(objs PRIVATE cuda_common)
 
 set(TARGET_NAME "image_convolution")
