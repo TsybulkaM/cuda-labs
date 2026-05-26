@@ -22,3 +22,16 @@ build-ic:
 
 clean-ic:
 	rm -rf image-convolution/${BUILD_DIR}
+
+# ==== Webcam Filter ====
+
+build-webcam: CMAKE_FLAGS += -DCMAKE_BUILD_TYPE=Release
+build-webcam:
+	cmake ${CMAKE_FLAGS} -S cuda-webcam-filter -B cuda-webcam-filter/${BUILD_DIR} && cmake --build cuda-webcam-filter/${BUILD_DIR}
+
+test-webcam: CMAKE_FLAGS += -DRUN_UNIT_TESTS=ON
+test-webcam: build-webcam
+	cd cuda-webcam-filter/${BUILD_DIR} && ctest -C Release --output-on-failure
+	
+clean-webcam:
+	rm -rf cuda-webcam-filter/${BUILD_DIR}
