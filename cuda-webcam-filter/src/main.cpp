@@ -23,15 +23,25 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  // Create filter kernel
+  // Create filter kernel (HDR uses a dummy 1×1 kernel — processed separately)
   cuda_filter::FilterType filterType =
       cuda_filter::FilterUtils::stringToFilterType(options.filterType);
   cv::Mat kernel = cuda_filter::FilterUtils::createFilterKernel(
       filterType, options.kernelSize, options.intensity);
 
-  PLOG_INFO << "Filter: " << options.filterType
-            << ", Kernel size: " << options.kernelSize
-            << ", Intensity: " << options.intensity;
+  const bool isHDR = (filterType == cuda_filter::FilterType::HDR_TONEMAPPING);
+  cuda_filter::HdrParams hdrParams{options.exposure, options.gamma,
+                                   options.saturation, options.tonemapAlgo};
+
+  if (isHDR)
+    PLOG_INFO << "Filter: hdr, Tonemap: " << options.tonemapAlgo
+              << ", Exposure: " << options.exposure
+              << ", Gamma: " << options.gamma
+              << ", Saturation: " << options.saturation;
+  else
+    PLOG_INFO << "Filter: " << options.filterType
+              << ", Kernel size: " << options.kernelSize
+              << ", Intensity: " << options.intensity;
 
   cv::Mat frame, filteredCPU, filteredGPU;
   cv::VideoWriter writer;
@@ -52,7 +62,10 @@ int main(int argc, char **argv) {
 
     // Apply filter using CPU
     const double cpuStart = static_cast<double>(cv::getTickCount());
-    cuda_filter::applyFilterCPU(frame, filteredCPU, kernel);
+    if (isHDR)
+      cuda_filter::FilterUtils::applyHDRTonemapCPU(frame, filteredCPU, hdrParams);
+    else
+      cuda_filter::applyFilterCPU(frame, filteredCPU, kernel);
     const double cpuEnd = static_cast<double>(cv::getTickCount());
     const double cpuTime = (cpuEnd - cpuStart) / cv::getTickFrequency();
     frameCountCPU++;
@@ -64,7 +77,10 @@ int main(int argc, char **argv) {
 
     // Apply filter using GPU
     const double gpuStart = static_cast<double>(cv::getTickCount());
-    cuda_filter::applyFilterGPU(frame, filteredGPU, kernel);
+    if (isHDR)
+      cuda_filter::applyHDRTonemapGPU(frame, filteredGPU, hdrParams);
+    else
+      cuda_filter::applyFilterGPU(frame, filteredGPU, kernel);
     const double gpuEnd = static_cast<double>(cv::getTickCount());
     const double gpuTime = (gpuEnd - gpuStart) / cv::getTickFrequency();
     frameCountGPU++;
@@ -96,11 +112,17 @@ int main(int argc, char **argv) {
                 cv::Point(combined.cols / 2 + 10, combined.rows - 10),
                 cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 0), 2);
 
-    // Display the combined result
-    if (options.preview) {
-      inputHandler.displaySideBySide(frame, combined);
-    } else {
-      inputHandler.displayFrame(combined);
+    // Display the combined result (skip when saving and no webcam — no display needed)
+    const bool headless = options.saveOutput &&
+                          (options.inputSource == cuda_filter::InputSource::IMAGE ||
+                           options.inputSource == cuda_filter::InputSource::VIDEO ||
+                           options.inputSource == cuda_filter::InputSource::SYNTHETIC);
+    if (!headless) {
+      if (options.preview) {
+        inputHandler.displaySideBySide(frame, combined);
+      } else {
+        inputHandler.displayFrame(combined);
+      }
     }
 
     // Handle saving output if requested
@@ -151,8 +173,8 @@ int main(int argc, char **argv) {
         writer.write(combined);
       }
     }
-    // Exit on ESC key
-    if (cv::waitKey(1) == 27) {
+    // Exit on ESC key (skip in headless image mode)
+    if (!headless && cv::waitKey(1) == 27) {
       break;
     }
   }

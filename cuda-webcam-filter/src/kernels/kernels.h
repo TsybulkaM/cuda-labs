@@ -1,12 +1,14 @@
 #pragma once
 
 #include <opencv2/opencv.hpp>
+#include "filter_utils.h"
 
 namespace cuda_filter
 {
 
     void applyFilterGPU(const cv::Mat &input, cv::Mat &output, const cv::Mat &kernel);
     void applyFilterCPU(const cv::Mat &input, cv::Mat &output, const cv::Mat &kernel);
+    void applyHDRTonemapGPU(const cv::Mat &input, cv::Mat &output, const HdrParams &params);
 
     namespace cuda
     {

@@ -14,6 +14,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Set build type to Release for better performance
 set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 
+set(CMAKE_CUDA_RUNTIME_LIBRARY Static)
+
 # Project version
 set(PROJECT_VERSION "0.1.0")
 configure_file(
@@ -54,7 +56,6 @@ FetchContent_MakeAvailable(gtest cxxopts plog)
 # `sudo apt install libopencv-dev`
 find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui videoio)
 message(STATUS "OpenCV ${OpenCV_VERSION} found")
-include_directories(${OpenCV_INCLUDE_DIRS})
 
 # Define source files
 set(SOURCES
@@ -83,18 +84,48 @@ set(INCLUDE_DIRS
 
 # Add executable
 add_executable(${PROJECT_NAME} ${SOURCES})
+
 target_include_directories(${PROJECT_NAME} PRIVATE ${INCLUDE_DIRS})
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${cxxopts_SOURCE_DIR}/include
     ${plog_SOURCE_DIR}/include
+    ${OpenCV_INCLUDE_DIRS}
 )
 
 # Link libraries
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(${PROJECT_NAME} PRIVATE
     ${OpenCV_LIBS}
     plog::plog
     GTest::gtest GTest::gmock
 )
+
+# Pack all shared-library dependencies (OpenCV, libstdc++, etc.) into a single
+# portable executable using staticx. Install with: pip install staticx
+find_program(STATICX_EXECUTABLE staticx)
+if(STATICX_EXECUTABLE)
+    # Collect dlopen-loaded libs that staticx can't auto-detect via ldd.
+    # We add them explicitly with -l so staticx includes them in _added_libs
+    # before scanning, avoiding the "absent from _added_libs but present" error.
+    set(STATICX_EXTRA_LIBS "")
+    foreach(LIB lapack blas)
+        find_library(LIB_${LIB} NAMES ${LIB})
+        if(LIB_${LIB})
+            list(APPEND STATICX_EXTRA_LIBS -l "${LIB_${LIB}}")
+        endif()
+    endforeach()
+
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${STATICX_EXECUTABLE}
+                ${STATICX_EXTRA_LIBS}
+                $<TARGET_FILE:${PROJECT_NAME}>
+                $<TARGET_FILE_DIR:${PROJECT_NAME}>/${PROJECT_NAME}-portable
+        COMMENT "staticx: packing portable binary"
+        VERBATIM
+    )
+    message(STATUS "staticx found — portable binary will be built automatically")
+else()
+    message(STATUS "staticx not found — run: pip install staticx && staticx build/${PROJECT_NAME} build/${PROJECT_NAME}-portable")
+endif()
 
 # Testing
 if(RUN_UNIT_TESTS)

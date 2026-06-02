@@ -12,7 +12,16 @@ namespace cuda_filter
         SHARPEN,
         EDGE_DETECTION,
         EMBOSS,
-        IDENTITY
+        IDENTITY,
+        HDR_TONEMAPPING
+    };
+
+    struct HdrParams
+    {
+        float exposure   = 1.0f;
+        float gamma      = 1.0f;
+        float saturation = 1.0f;
+        int   algorithm  = 0;    // 0=Reinhard  1=Drago  2=Mantiuk
     };
 
     class FilterUtils
@@ -22,6 +31,7 @@ namespace cuda_filter
         static cv::Mat createFilterKernel(FilterType type, int kernelSize, float intensity = 1.0f);
 
         static void applyFilterCPU(const cv::Mat &input, cv::Mat &output, const cv::Mat &kernel);
+        static void applyHDRTonemapCPU(const cv::Mat &input, cv::Mat &output, const HdrParams &params);
     };
 
 } // namespace cuda_filter

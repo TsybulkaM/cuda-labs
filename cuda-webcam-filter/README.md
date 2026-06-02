@@ -6,8 +6,11 @@ This program applies various convolution filters to a webcam feed in real-time u
 ## Features
 - Real-time webcam video capture
 - Multiple convolution filter options (blur, sharpen, edge detection, emboss)
-- GPU-accelerated processing using CUDA
+- HDR tonemapping with three algorithms (Reinhard, Drago, Mantiuk)
+- GPU-accelerated processing using CUDA (both convolution and HDR filters)
 - Command-line options for filter selection and parameters
+- Single portable binary with bundled dependencies (via staticx)
+- Headless operation for cloud/container environments
 
 ## Usage
 ```
@@ -20,11 +23,17 @@ This program applies various convolution filters to a webcam feed in real-time u
   -p, --path arg         Path to input image or video file (default: test_image.jpg)
   -s, --synthetic arg    Synthetic pattern type: 'checkerboard', 'gradient', 'noise' (default: checkerboard)
   -d, --device arg       Camera device ID (default: 0)
-  -f, --filter arg       Filter type: blur, sharpen, edge, emboss (default: blur)
+  -f, --filter arg       Filter type: blur, sharpen, edge, emboss, hdr (default: blur)
   -k, --kernel-size arg  Kernel size for filters (default: 3)
       --sigma arg        Sigma value for Gaussian blur (default: 1.0)
       --intensity arg    Filter intensity (default: 1.0)
+      --exposure arg     Exposure value for HDR (default: 1.0)
+      --gamma arg        Gamma value for HDR (default: 1.0)
+      --saturation arg   Saturation for HDR (default: 1.0)
+      --tonemap arg      HDR tonemap algorithm: reinhard, drago, mantiuk (default: reinhard)
       --preview          Show original video alongside filtered
+      --save             Save output to file
+      --out arg          Output filename (default: auto-generated)
   -h, --help             Print usage
   -v, --version          Print version information
 ```
@@ -42,11 +51,23 @@ Press **ESC** to exit the application.
 # Edge detection on webcam with side-by-side preview
 ./build/cuda-webcam-filter --filter edge --preview
 
+# HDR tonemapping with default Reinhard algorithm
+./build/cuda-webcam-filter --filter hdr
+
+# HDR with Drago logarithmic algorithm, increased exposure and saturation
+./build/cuda-webcam-filter --filter hdr --tonemap drago --exposure 1.5 --saturation 1.2
+
+# HDR with Mantiuk perceptual algorithm and gamma correction
+./build/cuda-webcam-filter --filter hdr --tonemap mantiuk --gamma 2.2
+
 # Synthetic input (no webcam required)
 ./build/cuda-webcam-filter --input synthetic --synthetic checkerboard --filter sharpen --preview
 
 # Process an image file
-./build/cuda-webcam-filter --input image --path photo.jpg --filter emboss
+./build/cuda-webcam-filter --input image --path cat.jpeg --filter emboss --save --out result.jpeg
+
+# Process image with HDR and save output
+./build/cuda-webcam-filter --input image --path photo.jpg --filter hdr --exposure 2.0 --save
 ```
 
 ### Windows
@@ -63,17 +84,49 @@ $env:PATH = "C:\opencv\build\x64\vc16\bin;" + $env:PATH
 # Edge detection on webcam with side-by-side preview
 .\build\Release\cuda-webcam-filter.exe --filter edge --preview
 
+# HDR tonemapping with Drago algorithm
+.\build\Release\cuda-webcam-filter.exe --filter hdr --tonemap drago --exposure 1.5
+
 # Synthetic input (no webcam required)
 .\build\Release\cuda-webcam-filter.exe --input synthetic --synthetic checkerboard --filter sharpen --preview
 
-# Process an image file
-.\build\Release\cuda-webcam-filter.exe --input image --path photo.jpg --filter emboss
+# Process an image file with HDR
+.\build\Release\cuda-webcam-filter.exe --input image --path photo.jpg --filter hdr --save
 ```
 
 **Command Prompt:**
 ```cmd
 set PATH=C:\opencv\build\x64\vc16\bin;%PATH%
 .\build\Release\cuda-webcam-filter.exe --filter edge --preview
+.\build\Release\cuda-webcam-filter.exe --filter hdr --tonemap drago --exposure 1.5
+```
+
+## HDR Tonemapping Filters
+
+The HDR filter applies tone mapping operators to enhance image dynamic range. Three algorithms are available:
+
+- **Reinhard**: Simple operator, good for general-purpose tone mapping (default)
+- **Drago**: Logarithmic operator, preserves local contrast
+- **Mantiuk**: Perceptual operator, good for visually appealing results
+
+### HDR Parameters
+
+- `--exposure` (0.1–3.0, default: 1.0): Multiplier for input brightness
+- `--gamma` (0.5–3.0, default: 1.0): Gamma correction (< 1.0 brightens, > 1.0 darkens)
+- `--saturation` (0.0–2.0, default: 1.0): Color saturation (0 = grayscale, 1 = normal, > 1 = more vivid)
+- `--tonemap` (reinhard|drago|mantiuk, default: reinhard): Tone mapping algorithm
+
+### Example HDR Usage
+
+```bash
+# Low-light image enhancement
+./cuda-webcam-filter --input image --path dark.jpg --filter hdr --exposure 2.0 --gamma 0.8 --save
+
+# High contrast, vibrant colors
+./cuda-webcam-filter --filter hdr --tonemap mantiuk --saturation 1.5
+
+# Preserve local contrast
+./cuda-webcam-filter --filter hdr --tonemap drago --gamma 2.2
 ```
 
 ## Hardware requirements
@@ -242,6 +295,40 @@ cmake .. -G "Visual Studio 17 2022" -A x64
 cmake --build . --config Release
 ```
 
+## Portable Binary (Linux)
+
+The CMakeLists.txt includes support for creating a self-contained binary using `staticx`, which bundles all dependencies (OpenCV, CUDA runtime, libstdc++) into a single executable.
+
+### Prerequisites
+```bash
+sudo apt install patchelf
+pip install staticx
+```
+
+### Build Portable Binary
+```bash
+mkdir build && cd build
+cmake ..
+cmake --build . -j $(nproc)
+# The portable binary will be at: cuda-webcam-filter-portable
+```
+
+The resulting `cuda-webcam-filter-portable` binary can be distributed to other Linux systems without requiring OpenCV, CUDA, or specific libstdc++ versions to be pre-installed.
+
+### Headless Mode
+
+The binary supports headless operation (no display server required) for cloud/container environments:
+
+```bash
+# Process image without display
+./cuda-webcam-filter-portable --input image --path photo.jpg --filter hdr --save
+
+# Process video to file without display
+./cuda-webcam-filter-portable --input video --path input.mp4 --filter emboss --save --out output.mp4
+```
+
+No display output is shown when using `--save` with image/video/synthetic inputs.
+
 ## Testing
 The project includes unit tests and functional tests which can be enabled during the build:
 ```bash
@@ -278,22 +365,47 @@ cuda-webcam-filter/
 │   └── functional_tests/
 │       ├── CMakeLists.txt
 │       └── test_filters.cpp
-└── build/
-    └── build_all.sh          # Build script
 ```
 
 ## Example: Adding a New Filter
 
-To add a new filter:
+### Adding a Convolution Filter
+
+To add a new convolution-based filter:
 
 1. Add a new filter type to the `FilterType` enum in `filter_utils.h`
 2. Add the filter mapping in `stringToFilterType()` in `filter_utils.cpp`
 3. Implement the kernel creation in `createFilterKernel()` in `filter_utils.cpp`
+4. Both CPU and GPU implementations will automatically use the kernel
+
+### Adding a Pixel-wise Filter (like HDR)
+
+To add a new pixel-wise filter (e.g., color grading, tone mapping):
+
+1. Add a new filter type and parameter struct in `filter_utils.h`
+2. Add CPU implementation (e.g., `applyFilterNameCPU()`) in `filter_utils.cpp`
+3. Add GPU kernel in `convolution_kernels.cu` with corresponding `applyFilterNameGPU()`
+4. Add to `FilterType` enum and `stringToFilterType()` mapping
+5. Update command-line parser in `input_args_parser.cpp` to handle new parameters
+6. Update `main.cpp` to route to new filter when selected
 
 ## Performance Considerations
 
-- The provided convolution kernel implementation is optimized for readability but can be further optimized:
+### Convolution Filters
+- The provided convolution kernel is optimized for readability but can be further optimized:
   - Consider using shared memory to reduce global memory accesses
   - Explore using texture memory for input images
   - Implement separable convolution for certain filters (like Gaussian blur)
-- Profile the application using NVIDIA's profiling tools to identify bottlenecks
+
+### HDR Tonemapping
+- Current implementation uses per-pixel operations with global memory access
+- Potential optimizations:
+  - Use shared memory for intermediate calculations
+  - Vectorize operations using CUDA intrinsics
+  - Consider reduced precision (fp16) for faster computation on compatible GPUs
+
+### Profiling
+- Use NVIDIA's profiling tools to identify bottlenecks:
+  - `nvidia-smi`: Monitor GPU memory and utilization
+  - `nvprof` or `nsys`: Detailed kernel execution profiling
+  - Check for memory bandwidth limitations vs. compute limitations

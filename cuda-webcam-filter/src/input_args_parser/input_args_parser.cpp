@@ -71,6 +71,15 @@ FilterOptions InputArgsParser::parseArgs() {
   filterOptions.saveOutput = result["save"].as<bool>();
   filterOptions.outputPath = result["out"].as<std::string>();
 
+  filterOptions.exposure   = result["exposure"].as<float>();
+  filterOptions.gamma      = result["gamma"].as<float>();
+  filterOptions.saturation = result["saturation"].as<float>();
+
+  const std::string algo = result["tonemap"].as<std::string>();
+  if      (algo == "drago")   filterOptions.tonemapAlgo = 1;
+  else if (algo == "mantiuk") filterOptions.tonemapAlgo = 2;
+  else                        filterOptions.tonemapAlgo = 0; // reinhard
+
   return filterOptions;
 }
 
@@ -85,7 +94,7 @@ void InputArgsParser::setupOptions(cxxopts::Options &options) {
       cxxopts::value<std::string>()->default_value("checkerboard"))(
       "d,device", "Camera device ID",
       cxxopts::value<int>()->default_value("0"))(
-      "f,filter", "Filter type: blur, sharpen, edge, emboss",
+      "f,filter", "Filter type: blur, sharpen, edge, emboss, hdr",
       cxxopts::value<std::string>()->default_value("blur"))(
       "k,kernel-size", "Kernel size for filters",
       cxxopts::value<int>()->default_value("3"))(
@@ -94,6 +103,14 @@ void InputArgsParser::setupOptions(cxxopts::Options &options) {
       "intensity", "Filter intensity",
       cxxopts::value<float>()->default_value("1.0"))(
       "preview", "Show original video alongside filtered")(
+      "exposure", "HDR exposure multiplier (default 1.0)",
+      cxxopts::value<float>()->default_value("1.0"))(
+      "gamma", "HDR gamma correction (default 1.0)",
+      cxxopts::value<float>()->default_value("1.0"))(
+      "saturation", "HDR saturation scale (default 1.0)",
+      cxxopts::value<float>()->default_value("1.0"))(
+      "tonemap", "HDR tonemapping algorithm: reinhard, drago, mantiuk",
+      cxxopts::value<std::string>()->default_value("reinhard"))(
       "h,help", "Print usage")("v,version", "Print version information");
 
   options.add_options()("save",

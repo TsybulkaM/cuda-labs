@@ -21,6 +21,11 @@ struct FilterOptions {
   bool preview;
   bool saveOutput;
   std::string outputPath;
+  // HDR tonemapping parameters
+  float exposure   = 1.0f;
+  float gamma      = 1.0f;
+  float saturation = 1.0f;
+  int   tonemapAlgo = 0;   // 0=reinhard  1=drago  2=mantiuk
 };
 
 class InputArgsParser {
