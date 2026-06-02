@@ -182,9 +182,14 @@ namespace cuda_filter
         delete[] h_kernel;
     }
 
+    __device__ static float BT_709(float3 c)
+    {
+        return 0.0722f * c.x + 0.7152f * c.y + 0.2126f * c.z; // BGR luma
+    }
+
     __device__ static float3 hdrSaturation(float3 c, float s)
     {
-        float gray = 0.0722f * c.x + 0.7152f * c.y + 0.2126f * c.z; // BGR luma
+        float gray = BT_709(c);
         return make_float3(
             fmaxf(0.0f, gray + s * (c.x - gray)),
             fmaxf(0.0f, gray + s * (c.y - gray)),
@@ -193,7 +198,7 @@ namespace cuda_filter
 
     __device__ static float3 hdrTonemap(float3 c, int algo)
     {
-        float L = 0.0722f * c.x + 0.7152f * c.y + 0.2126f * c.z; // BGR luma
+        float L = BT_709(c);
         if (L < 1e-6f) return c;
 
         float Ld = 0.0f;

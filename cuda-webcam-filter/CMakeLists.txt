@@ -17,7 +17,7 @@ set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 set(CMAKE_CUDA_RUNTIME_LIBRARY Static)
 
 # Project version
-set(PROJECT_VERSION "0.1.0")
+set(PROJECT_VERSION "0.1.1")
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/version.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/src/utils/version.h
