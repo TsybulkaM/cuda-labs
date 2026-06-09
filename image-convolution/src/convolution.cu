@@ -245,8 +245,9 @@ void convolutionGPUSeparable(const Image *input, Image *output,
   output->height = input->height;
   output->channels = input->channels;
 
-  dim3 block(16, 16);
-  dim3 grid((input->width + 15) / 16, (input->height + 15) / 16);
+  dim3 block(CUDA_BLOCK_SIZE, CUDA_BLOCK_SIZE);
+  dim3 grid((input->width + CUDA_BLOCK_SIZE - 1) / CUDA_BLOCK_SIZE,
+            (input->height + CUDA_BLOCK_SIZE - 1) / CUDA_BLOCK_SIZE);
 
   // Horizontal pass
   convolutionKernelSeparableHorizontal<<<grid, block>>>(
