@@ -4,6 +4,7 @@
 #include "kernels.h"
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <span>
 #include <stdint.h>
 
@@ -153,11 +154,15 @@ void convolutionGPU(const Image *input, Image *output,
   size_t imageSize = input->width * input->height * input->channels;
   int filterWidth = (int)std::sqrt((double)filter.size());
 
+  int device;
+  CUDA_CHECK(cudaGetDevice(&device));
+
   uint8_t *d_input, *d_output;
-  CUDA_CHECK(cudaMalloc(&d_input, imageSize));
-  CUDA_CHECK(cudaMalloc(&d_output, imageSize));
-  CUDA_CHECK(
-      cudaMemcpy(d_input, input->data, imageSize, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMallocManaged(&d_input, imageSize));
+  CUDA_CHECK(cudaMallocManaged(&d_output, imageSize));
+
+  std::memcpy(d_input, input->data, imageSize);
+  CUDA_CHECK(cudaMemPrefetchAsync(d_input, imageSize, device));
   CUDA_CHECK(cudaMemcpyToSymbol(d_filter, filter.data(),
                                 filter.size() * sizeof(float)));
 
@@ -175,8 +180,10 @@ void convolutionGPU(const Image *input, Image *output,
                                           filterWidth);
   CUDA_CHECK(cudaGetLastError());
 
-  CUDA_CHECK(
-      cudaMemcpy(output->data, d_output, imageSize, cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemPrefetchAsync(d_output, imageSize, cudaCpuDeviceId));
+  CUDA_CHECK(cudaDeviceSynchronize());
+
+  std::memcpy(output->data, d_output, imageSize);
   CUDA_CHECK(cudaFree(d_input));
   CUDA_CHECK(cudaFree(d_output));
 }
@@ -186,11 +193,15 @@ void convolutionGPUShared(const Image *input, Image *output,
   size_t imageSize = input->width * input->height * input->channels;
   int filterWidth = (int)std::sqrt((double)filter.size());
 
+  int device;
+  CUDA_CHECK(cudaGetDevice(&device));
+
   uint8_t *d_input, *d_output;
-  CUDA_CHECK(cudaMalloc(&d_input, imageSize));
-  CUDA_CHECK(cudaMalloc(&d_output, imageSize));
-  CUDA_CHECK(
-      cudaMemcpy(d_input, input->data, imageSize, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMallocManaged(&d_input, imageSize));
+  CUDA_CHECK(cudaMallocManaged(&d_output, imageSize));
+
+  std::memcpy(d_input, input->data, imageSize);
+  CUDA_CHECK(cudaMemPrefetchAsync(d_input, imageSize, device));
   CUDA_CHECK(cudaMemcpyToSymbol(d_filter, filter.data(),
                                 filter.size() * sizeof(float)));
 
@@ -216,8 +227,10 @@ void convolutionGPUShared(const Image *input, Image *output,
       filterWidth);
   CUDA_CHECK(cudaGetLastError());
 
-  CUDA_CHECK(
-      cudaMemcpy(output->data, d_output, imageSize, cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemPrefetchAsync(d_output, imageSize, cudaCpuDeviceId));
+  CUDA_CHECK(cudaDeviceSynchronize());
+
+  std::memcpy(output->data, d_output, imageSize);
   CUDA_CHECK(cudaFree(d_input));
   CUDA_CHECK(cudaFree(d_output));
 }
@@ -227,15 +240,19 @@ void convolutionGPUSeparable(const Image *input, Image *output,
   size_t imageSize = input->width * input->height * input->channels;
   int filterWidth = (int)std::sqrt((double)filter.size());
 
+  int device;
+  CUDA_CHECK(cudaGetDevice(&device));
+
   uint8_t *d_input, *d_output;
   float *d_intermediate;
 
-  CUDA_CHECK(cudaMalloc(&d_input, imageSize));
-  CUDA_CHECK(cudaMalloc(&d_output, imageSize));
-  CUDA_CHECK(
-      cudaMalloc(&d_intermediate, imageSize * sizeof(float) / sizeof(uint8_t)));
-  CUDA_CHECK(
-      cudaMemcpy(d_input, input->data, imageSize, cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMallocManaged(&d_input, imageSize));
+  CUDA_CHECK(cudaMallocManaged(&d_output, imageSize));
+  // d_intermediate stays GPU-only, no need for managed memory
+  CUDA_CHECK(cudaMalloc(&d_intermediate, imageSize * sizeof(float)));
+
+  std::memcpy(d_input, input->data, imageSize);
+  CUDA_CHECK(cudaMemPrefetchAsync(d_input, imageSize, device));
   CUDA_CHECK(cudaMemcpyToSymbol(d_filter, filter.data(),
                                 filter.size() * sizeof(float)));
 
@@ -261,8 +278,10 @@ void convolutionGPUSeparable(const Image *input, Image *output,
       filterWidth);
   CUDA_CHECK(cudaGetLastError());
 
-  CUDA_CHECK(
-      cudaMemcpy(output->data, d_output, imageSize, cudaMemcpyDeviceToHost));
+  CUDA_CHECK(cudaMemPrefetchAsync(d_output, imageSize, cudaCpuDeviceId));
+  CUDA_CHECK(cudaDeviceSynchronize());
+
+  std::memcpy(output->data, d_output, imageSize);
   CUDA_CHECK(cudaFree(d_input));
   CUDA_CHECK(cudaFree(d_intermediate));
   CUDA_CHECK(cudaFree(d_output));
