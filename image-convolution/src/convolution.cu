@@ -47,7 +47,7 @@ __global__ void convolutionKernelShared(const uint8_t *input, uint8_t *output,
   const int halfFilter = filterWidth / 2;
   const int sharedW = blockDim.x + 2 * halfFilter;
   const int sharedH = blockDim.y + 2 * halfFilter;
-  const int sharedWSafe = 25;
+  const int sharedWSafe = blockDim.x + 2 * halfFilter + 1;
 
   const int tx = threadIdx.x;
   const int ty = threadIdx.y;
