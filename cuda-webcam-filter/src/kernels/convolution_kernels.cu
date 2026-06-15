@@ -273,4 +273,29 @@ namespace cuda_filter
         cudaFree(d_out);
     }
 
+    // ---- stream-aware wrappers (no host memory management) ------------------
+
+    void applyConvolutionOnStream(
+        const unsigned char* d_input, unsigned char* d_output,
+        const float* d_kernel, int width, int height, int channels, int kernelSize,
+        cudaStream_t stream)
+    {
+        dim3 block(16, 16);
+        dim3 grid(cuda::divUp(width, 16), cuda::divUp(height, 16));
+        convolutionKernel<<<grid, block, 0, stream>>>(
+            d_input, d_output, d_kernel, width, height, channels, kernelSize);
+    }
+
+    void applyHDROnStream(
+        const unsigned char* d_input, unsigned char* d_output,
+        int width, int height, int channels,
+        const HdrParams& params, cudaStream_t stream)
+    {
+        dim3 block(16, 16);
+        dim3 grid(cuda::divUp(width, 16), cuda::divUp(height, 16));
+        hdrTonemapKernel<<<grid, block, 0, stream>>>(
+            d_input, d_output, width, height, channels,
+            params.exposure, params.gamma, params.saturation, params.algorithm);
+    }
+
 } // namespace cuda_filter

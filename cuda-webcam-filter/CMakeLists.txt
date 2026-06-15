@@ -69,16 +69,24 @@ set(SOURCES
 if(CUDA_SUPPORT)
     list(APPEND SOURCES
         ${CMAKE_SOURCE_DIR}/src/kernels/convolution_kernels.cu
+        ${CMAKE_SOURCE_DIR}/src/pipeline/filter_pipeline.cu
+        ${CMAKE_SOURCE_DIR}/src/pipeline/wipe_transition.cu
     )
-    # Treat main.cpp as CUDA file
+    # Treat main.cpp as CUDA file so it can include CUDA headers
     set_source_files_properties(${CMAKE_SOURCE_DIR}/src/main.cpp PROPERTIES LANGUAGE CUDA)
 endif()
+
+# Pipeline + timing overlay (pure C++ / CUDA host code)
+list(APPEND SOURCES
+    ${CMAKE_SOURCE_DIR}/src/utils/timing_overlay.cpp
+)
 
 # Include directories
 set(INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/src/kernels/
     ${CMAKE_SOURCE_DIR}/src/utils/
     ${CMAKE_SOURCE_DIR}/src/input_args_parser/
+    ${CMAKE_SOURCE_DIR}/src/pipeline/
     ${CMAKE_CURRENT_BINARY_DIR}/src/utils/
 )
 

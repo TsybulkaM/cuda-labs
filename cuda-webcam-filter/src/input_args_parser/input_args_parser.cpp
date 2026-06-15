@@ -80,6 +80,13 @@ FilterOptions InputArgsParser::parseArgs() {
   else if (algo == "mantiuk") filterOptions.tonemapAlgo = 2;
   else                        filterOptions.tonemapAlgo = 0; // reinhard
 
+  // Pipeline options
+  filterOptions.pipelineSpec  = result["pipeline"].as<std::string>();
+  filterOptions.singleStream  = result.count("single-stream") > 0;
+  filterOptions.showTimings   = result.count("show-timings") > 0;
+  filterOptions.wipeTransition = result.count("wipe") > 0;
+  filterOptions.wipeSpeed     = result["wipe-speed"].as<float>();
+
   return filterOptions;
 }
 
@@ -112,6 +119,21 @@ void InputArgsParser::setupOptions(cxxopts::Options &options) {
       "tonemap", "HDR tonemapping algorithm: reinhard, drago, mantiuk",
       cxxopts::value<std::string>()->default_value("reinhard"))(
       "h,help", "Print usage")("v,version", "Print version information");
+
+  options.add_options()(
+      "pipeline",
+      "Pipeline spec (activates pipeline mode): filter[:ks[:intensity]],... "
+      "e.g. blur:3:1.0,sharpen:5:2.0,edge:3:1.5",
+      cxxopts::value<std::string>()->default_value(""))(
+      "single-stream",
+      "Use a single CUDA stream for the pipeline (disables multi-stream)")(
+      "show-timings",
+      "Draw real-time per-stage timing bar chart overlay")(
+      "wipe",
+      "Wipe transition between original and pipeline output (pipeline mode)")(
+      "wipe-speed",
+      "Wipe sweep speed in full-widths per second (default 0.3)",
+      cxxopts::value<float>()->default_value("0.3"));
 
   options.add_options()("save",
                         "Save processed output (image when input is image, or "

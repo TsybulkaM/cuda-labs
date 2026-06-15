@@ -1,411 +1,393 @@
 # CUDA Webcam Filter
 
 ## Purpose
-This program applies various convolution filters to a webcam feed in real-time using CUDA for GPU acceleration. The application demonstrates how to utilize GPU computing to process video streams efficiently.
+
+Real-time GPU-accelerated image filter application demonstrating CUDA convolution,
+HDR tonemapping, a multi-stage **filter pipeline** with CUDA stream concurrency,
+a GPU **wipe transition**, and live **performance instrumentation**.
+
+---
 
 ## Features
+
 - Real-time webcam video capture
-- Multiple convolution filter options (blur, sharpen, edge detection, emboss)
+- Multiple convolution filters: blur, sharpen, edge detection, emboss
 - HDR tonemapping with three algorithms (Reinhard, Drago, Mantiuk)
-- GPU-accelerated processing using CUDA (both convolution and HDR filters)
-- Command-line options for filter selection and parameters
-- Single portable binary with bundled dependencies (via staticx)
-- Headless operation for cloud/container environments
+- **Filter pipeline** — chain any number of filters applied sequentially
+- **Multi-stream pipeline** — one CUDA stream per stage + event-based inter-stage synchronisation
+- **Wipe transition** — GPU kernel that sweeps between original and filtered output
+- **Real-time timing overlay** — per-stage bar chart rendered on the live frame
+- Runtime switching between single-stream and multi-stream mode (press `S`)
+- Side-by-side CPU vs. GPU comparison (original single-filter mode)
+- Headless operation for cloud / container environments
 
-## Usage
-```
-  cuda-webcam-filter [OPTION...]
+---
+
+## Quick Start
+
+```bash
+# Build
+mkdir build && cd build
+cmake ..
+cmake --build . -j $(nproc)
+
+# Single filter — classic CPU/GPU side-by-side
+./cuda-webcam-filter --filter blur
+
+# Three-stage pipeline on webcam
+./cuda-webcam-filter --pipeline "blur:3:1.0,sharpen:5:2.0,edge:3:1.5" --show-timings
+
+# Pipeline with wipe transition (wipes between original and filtered)
+./cuda-webcam-filter --pipeline "blur:3,sharpen:5" --wipe --wipe-speed 0.4
+
+# Pipeline + compare single vs multi-stream interactively
+./cuda-webcam-filter --pipeline "blur:3,edge:3,emboss:3" --show-timings
+# Then press S to toggle single/multi-stream and observe timing changes
 ```
 
-### List of options
+---
+
+## Pipeline Mode
+
+### Activating the pipeline
+
+Pass `--pipeline` with a comma-separated filter specification.  The original
+single-filter CPU/GPU comparison mode remains active when `--pipeline` is omitted.
+
 ```
-  -i, --input arg        Input source: 'webcam', 'image', 'video', or 'synthetic' (default: webcam)
-  -p, --path arg         Path to input image or video file (default: test_image.jpg)
-  -s, --synthetic arg    Synthetic pattern type: 'checkerboard', 'gradient', 'noise' (default: checkerboard)
+--pipeline "blur:3:1.0,sharpen:5:2.0,edge:3:1.5,hdr"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           each element: filterType[:kernelSize[:intensity]]
+```
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `filterType` | — | `blur` `sharpen` `edge` `emboss` `hdr` `identity` |
+| `kernelSize` | 3 | Odd integer; ignored for `hdr` |
+| `intensity` | 1.0 | Strength multiplier; ignored for `hdr` |
+
+`hdr` stages inherit the global `--exposure`, `--gamma`, `--saturation`,
+`--tonemap` values.
+
+### Pipeline examples
+
+```bash
+# Blur → sharpen → edge detection
+./cuda-webcam-filter --pipeline "blur:5:1.0,sharpen:3:2.0,edge:3:1.5"
+
+# HDR → emboss
+./cuda-webcam-filter --pipeline "hdr,emboss:3:1.0" --tonemap drago --exposure 1.5
+
+# Process a video file and save the pipeline output
+./cuda-webcam-filter \
+    --input video --path clip.mp4 \
+    --pipeline "blur:3,sharpen:5,edge:3" \
+    --show-timings --save --out pipeline_out.mp4
+
+# Synthetic input — no webcam required
+./cuda-webcam-filter-portable \
+    --input synthetic --synthetic gradient \
+    --pipeline "blur:3,emboss:5:2.0" \
+    --wipe --show-timings --save --out pipeline_synthetic.png
+```
+
+### Pipeline keyboard controls
+
+| Key | Action |
+|-----|--------|
+| `ESC` | Quit |
+| `S` | Toggle **single-stream ↔ multi-stream** (live performance comparison) |
+| `T` | Toggle per-stage timing overlay |
+| `W` | Toggle wipe transition on/off |
+| `<` / `,` | Decrease wipe speed |
+| `>` / `.` | Increase wipe speed |
+
+---
+
+## Wipe Transition
+
+`--wipe` enables a GPU-accelerated left-to-right wipe between the **original
+frame** (left side) and the **pipeline output** (right side).  A 2-pixel white
+line marks the current boundary.
+
+The wipe auto-bounces: it advances to the right then retreats to the left,
+repeating continuously.
+
+```bash
+# Wipe at 0.3 screen-widths per second (default)
+./cuda-webcam-filter --pipeline "sharpen:5:2.0,edge:3" --wipe
+
+# Faster wipe
+./cuda-webcam-filter --pipeline "blur:7,emboss:3" --wipe --wipe-speed 0.8
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--wipe` | off | Enable wipe transition |
+| `--wipe-speed` | 0.3 | Full-width sweeps per second (0.01 – 5.0) |
+
+---
+
+## Performance Analysis
+
+### Instrumentation
+
+Every pipeline stage is timed with CUDA events (`cudaEventRecord` before and
+after the kernel launch).  `cudaEventElapsedTime` extracts the exact GPU
+execution time for each stage independently.
+
+### Real-time overlay (`--show-timings`)
+
+A bar chart drawn on the live frame shows:
+
+- Mode label: **Multi-stream** or **Single-stream**
+- One horizontal bar per stage, width proportional to its GPU time
+- Numeric `ms` value beside each bar
+- **Total pipeline time** at the bottom
+
+### Single-stream vs multi-stream
+
+The app runs in **multi-stream** mode by default.  Press `S` (or pass
+`--single-stream`) to switch.
+
+| Mode | Behaviour |
+|------|-----------|
+| Multi-stream | One `cudaStream_t` per stage; `cudaStreamWaitEvent` enforces data-dependencies while exposing the full pipeline graph to the GPU scheduler |
+| Single-stream | All operations serialised on `stream[0]`; no inter-stage events needed |
+
+**What to observe when switching:**
+
+- For computation-heavy stages (large kernels, many stages) multi-stream is
+  marginally faster — the GPU scheduler can fill bubbles between stages from
+  different streams.
+- For memory-bound stages the PCIe overlap benefit dominates; multi-stream
+  allows the host-to-device copy of the next frame to overlap with earlier
+  stage kernels from the current frame (visible in Nsight Systems).
+- The timing overlay updates every frame, so toggle `S` and watch the per-stage
+  bars and total time change in real time.
+
+### Profiling with NVIDIA Nsight Systems
+
+```bash
+nsys profile --trace=cuda,osrt \
+    ./cuda-webcam-filter \
+    --input synthetic --synthetic gradient \
+    --pipeline "blur:3,sharpen:5,edge:3" \
+    --show-timings --save --out /dev/null
+```
+
+Open the generated `.nsys-rep` in the Nsight Systems GUI to see:
+- Separate stream lanes for each pipeline stage
+- `cudaStreamWaitEvent` stall markers showing inter-stage dependencies
+- PCIe transfer / kernel overlap across frames
+
+---
+
+## All Options
+
+```
+  -i, --input arg        Input source: webcam | image | video | synthetic (default: webcam)
+  -p, --path arg         Path to input image/video (default: test_image.jpg)
+  -s, --synthetic arg    Synthetic pattern: checkerboard | gradient | noise (default: checkerboard)
   -d, --device arg       Camera device ID (default: 0)
-  -f, --filter arg       Filter type: blur, sharpen, edge, emboss, hdr (default: blur)
-  -k, --kernel-size arg  Kernel size for filters (default: 3)
-      --sigma arg        Sigma value for Gaussian blur (default: 1.0)
+
+  -f, --filter arg       Single filter: blur | sharpen | edge | emboss | hdr (default: blur)
+  -k, --kernel-size arg  Kernel size (default: 3)
       --intensity arg    Filter intensity (default: 1.0)
-      --exposure arg     Exposure value for HDR (default: 1.0)
-      --gamma arg        Gamma value for HDR (default: 1.0)
-      --saturation arg   Saturation for HDR (default: 1.0)
-      --tonemap arg      HDR tonemap algorithm: reinhard, drago, mantiuk (default: reinhard)
-      --preview          Show original video alongside filtered
+      --sigma arg        Sigma for Gaussian blur (default: 1.0)
+
+      --exposure arg     HDR exposure multiplier (default: 1.0)
+      --gamma arg        HDR gamma correction (default: 1.0)
+      --saturation arg   HDR saturation scale (default: 1.0)
+      --tonemap arg      HDR algorithm: reinhard | drago | mantiuk (default: reinhard)
+
+      --pipeline arg     Pipeline spec: filter[:ks[:intensity]],... (activates pipeline mode)
+      --single-stream    Force single CUDA stream for pipeline (comparison baseline)
+      --show-timings     Draw real-time per-stage timing bar chart overlay
+      --wipe             Wipe transition between original and pipeline output
+      --wipe-speed arg   Wipe speed in full-widths per second (default: 0.3)
+
+      --preview          Show original alongside filtered (single-filter mode)
       --save             Save output to file
-      --out arg          Output filename (default: auto-generated)
+      --out arg          Output file path (auto-generated if omitted)
   -h, --help             Print usage
-  -v, --version          Print version information
+  -v, --version          Print version
 ```
 
-## Running
+---
 
-Press **ESC** to exit the application.
+## Architecture
 
-### Linux
-
-```bash
-# Webcam with blur filter
-./build/cuda-webcam-filter
-
-# Edge detection on webcam with side-by-side preview
-./build/cuda-webcam-filter --filter edge --preview
-
-# HDR tonemapping with default Reinhard algorithm
-./build/cuda-webcam-filter --filter hdr
-
-# HDR with Drago logarithmic algorithm, increased exposure and saturation
-./build/cuda-webcam-filter --filter hdr --tonemap drago --exposure 1.5 --saturation 1.2
-
-# HDR with Mantiuk perceptual algorithm and gamma correction
-./build/cuda-webcam-filter --filter hdr --tonemap mantiuk --gamma 2.2
-
-# Synthetic input (no webcam required)
-./build/cuda-webcam-filter --input synthetic --synthetic checkerboard --filter sharpen --preview
-
-# Process an image file
-./build/cuda-webcam-filter --input image --path cat.jpeg --filter emboss --save --out result.jpeg
-
-# Process image with HDR and save output
-./build/cuda-webcam-filter --input image --path photo.jpg --filter hdr --exposure 2.0 --save
+```
+src/
+├── main.cpp                         # Entry point; dispatches pipeline vs single-filter mode
+├── kernels/
+│   ├── convolution_kernels.cu       # convolutionKernel, hdrTonemapKernel,
+│   │                                #   applyFilterGPU, applyHDRTonemapGPU,
+│   │                                #   applyConvolutionOnStream, applyHDROnStream
+│   └── kernels.h                    # Declarations incl. stream-aware variants
+├── pipeline/
+│   ├── filter_pipeline.h/.cu        # FilterPipeline — multi-stage, multi-stream execution
+│   ├── wipe_transition.h/.cu        # WipeTransition — GPU left-to-right wipe kernel
+│   └── ...
+├── utils/
+│   ├── filter_utils.h/.cpp          # FilterType, kernel creation, CPU apply
+│   ├── input_handler.h/.cpp         # Webcam / image / video / synthetic input
+│   ├── timing_overlay.h/.cpp        # Real-time bar-chart overlay (OpenCV draw calls)
+│   └── version.h.in
+└── input_args_parser/
+    ├── input_args_parser.h/.cpp     # CLI parsing (cxxopts)
 ```
 
-### Windows
+### FilterPipeline internals
 
-The OpenCV DLL directory must be on `PATH` before launching. Adjust the path below if you installed OpenCV elsewhere.
-
-**PowerShell:**
-```powershell
-$env:PATH = "C:\opencv\build\x64\vc16\bin;" + $env:PATH
-
-# Webcam with blur filter
-.\build\Release\cuda-webcam-filter.exe
-
-# Edge detection on webcam with side-by-side preview
-.\build\Release\cuda-webcam-filter.exe --filter edge --preview
-
-# HDR tonemapping with Drago algorithm
-.\build\Release\cuda-webcam-filter.exe --filter hdr --tonemap drago --exposure 1.5
-
-# Synthetic input (no webcam required)
-.\build\Release\cuda-webcam-filter.exe --input synthetic --synthetic checkerboard --filter sharpen --preview
-
-# Process an image file with HDR
-.\build\Release\cuda-webcam-filter.exe --input image --path photo.jpg --filter hdr --save
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  FilterPipeline::apply()                                            │
+│                                                                     │
+│  Buffers:  dBuf[0]   dBuf[1]   dBuf[2]  ...  dBuf[N]               │
+│             input  → stage-0 → stage-1  ...  output                │
+│                                                                     │
+│  Multi-stream mode:                                                 │
+│                                                                     │
+│  stream[0]: [H2D]──[kernel-0]──────────────[D2H]                   │
+│                         ↓ event                                     │
+│  stream[1]:         [wait]──[kernel-1]                              │
+│                                  ↓ event                            │
+│  stream[2]:               [wait]──[kernel-2]                        │
+│                                       ↓ event                       │
+│  stream[0]:                       [wait D2H ──────────]            │
+│                                                                     │
+│  Single-stream mode: all operations on stream[0], no events.       │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Command Prompt:**
-```cmd
-set PATH=C:\opencv\build\x64\vc16\bin;%PATH%
-.\build\Release\cuda-webcam-filter.exe --filter edge --preview
-.\build\Release\cuda-webcam-filter.exe --filter hdr --tonemap drago --exposure 1.5
+### WipeTransition kernel
+
+```cuda
+// For each pixel (x, y):
+//   if x < wipeX  → copy from imgA (original)
+//   if x >= wipeX → copy from imgB (filtered)
+//   if x == wipeX → draw white boundary line
 ```
 
-## HDR Tonemapping Filters
+---
 
-The HDR filter applies tone mapping operators to enhance image dynamic range. Three algorithms are available:
+## Adding New Filters
 
-- **Reinhard**: Simple operator, good for general-purpose tone mapping (default)
-- **Drago**: Logarithmic operator, preserves local contrast
-- **Mantiuk**: Perceptual operator, good for visually appealing results
+### Convolution filter
 
-### HDR Parameters
+1. Add entry to `FilterType` enum in `filter_utils.h`
+2. Add string mapping in `FilterUtils::stringToFilterType()`
+3. Add kernel matrix in `FilterUtils::createFilterKernel()`
+4. GPU and pipeline support are automatic — no other changes needed
 
-- `--exposure` (0.1–3.0, default: 1.0): Multiplier for input brightness
-- `--gamma` (0.5–3.0, default: 1.0): Gamma correction (< 1.0 brightens, > 1.0 darkens)
-- `--saturation` (0.0–2.0, default: 1.0): Color saturation (0 = grayscale, 1 = normal, > 1 = more vivid)
-- `--tonemap` (reinhard|drago|mantiuk, default: reinhard): Tone mapping algorithm
+### Pixel-wise filter (like HDR)
 
-### Example HDR Usage
+1. Add `FilterType` entry and parameter struct
+2. Implement CPU version in `filter_utils.cpp`
+3. Implement `__global__` kernel and `applyXOnStream()` wrapper in `convolution_kernels.cu`
+4. Declare `applyXOnStream()` in `kernels.h`
+5. Wire into `FilterPipeline::apply()` (alongside the existing HDR branch)
+6. Add CLI options in `input_args_parser.cpp`
 
-```bash
-# Low-light image enhancement
-./cuda-webcam-filter --input image --path dark.jpg --filter hdr --exposure 2.0 --gamma 0.8 --save
+---
 
-# High contrast, vibrant colors
-./cuda-webcam-filter --filter hdr --tonemap mantiuk --saturation 1.5
+## Hardware Requirements
 
-# Preserve local contrast
-./cuda-webcam-filter --filter hdr --tonemap drago --gamma 2.2
-```
-
-## Hardware requirements
-Requires a CUDA-enabled GPU.
+- CUDA-capable GPU (compute capability ≥ 7.5; adjust `CMAKE_CUDA_ARCHITECTURES` in CMakeLists.txt)
+- Linux or Windows
 
 ## Dependencies
-- OpenCV (>= 4.5.0) — **install separately, see below**
-- CUDA Toolkit (>= 12.0)
-- cxxopts (fetched by CMake)
-- plog (fetched by CMake)
-- Google Test (fetched by CMake)
-- CMake (>= 3.28)
+
+| Library | Version | How to get |
+|---------|---------|------------|
+| CUDA Toolkit | ≥ 12.0 | NVIDIA installer |
+| OpenCV | ≥ 4.5 | See below |
+| CMake | ≥ 3.27 | Package manager / kitware |
+| cxxopts | 3.3.1 | Fetched by CMake |
+| plog | 1.1.11 | Fetched by CMake |
+| Google Test | 1.17.0 | Fetched by CMake |
+
+---
 
 ## OpenCV Installation
 
-OpenCV is **not bundled** in this repository. Install it before building.
+### Linux — package manager (quickest)
 
-### Linux
-
-#### Option A — Package manager (quickest, no CUDA support in OpenCV itself)
 ```bash
-sudo apt-get update
-sudo apt-get install libopencv-dev
+sudo apt-get update && sudo apt-get install libopencv-dev
 ```
-The CUDA kernel in this app runs independently of OpenCV's CUDA build, so this is sufficient for most use cases.
 
-#### Option B — Build from source with CUDA support
-Required when you want OpenCV's own GPU-accelerated functions (e.g. `cv::cuda::*`).
+### Linux — build from source with CUDA support
 
-**1. Install prerequisites**
 ```bash
-sudo apt-get update
+# Prerequisites
 sudo apt-get install build-essential cmake git pkg-config \
     libgtk-3-dev libavcodec-dev libavformat-dev libswscale-dev \
-    libv4l-dev libxvidcore-dev libx264-dev libjpeg-dev libpng-dev \
-    libtiff-dev gfortran openexr libatlas-base-dev python3-dev \
-    python3-numpy libtbb-dev libdc1394-dev
-```
+    libv4l-dev libjpeg-dev libpng-dev libtiff-dev
 
-**2. Download OpenCV 4.11.0**
-```bash
+# Download
 wget -O opencv.tar.gz https://github.com/opencv/opencv/archive/refs/tags/4.11.0.tar.gz
-wget -O opencv_contrib.tar.gz https://github.com/opencv/opencv_contrib/archive/refs/tags/4.11.0.tar.gz
-tar -xzf opencv.tar.gz
-tar -xzf opencv_contrib.tar.gz
-```
+tar -xzf opencv.tar.gz && cd opencv-4.11.0
 
-**3. Build and install**
-```bash
-cd opencv-4.11.0
 mkdir build && cd build
 cmake .. \
   -DCMAKE_BUILD_TYPE=Release \
-  -DOPENCV_EXTRA_MODULES_PATH=../../opencv_contrib-4.11.0/modules \
-  -DWITH_CUDA=ON \
-  -DWITH_CUBLAS=ON \
-  -DCUDA_ARCH_BIN="8.9" \
-  -DCUDA_FAST_MATH=ON \
-  -DBUILD_opencv_python2=OFF \
-  -DBUILD_opencv_python3=OFF \
-  -DBUILD_EXAMPLES=OFF \
-  -DBUILD_TESTS=OFF \
-  -DBUILD_PERF_TESTS=OFF \
-  -DBUILD_DOCS=OFF
+  -DWITH_CUDA=ON -DWITH_CUBLAS=ON \
+  -DCUDA_ARCH_BIN="7.5" \          # match your GPU compute capability
+  -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF
 cmake --build . -j $(nproc)
-sudo make install
-sudo ldconfig
+sudo make install && sudo ldconfig
 ```
-> Adjust `CUDA_ARCH_BIN` to match your GPU's compute capability (e.g. `"8.6"` for RTX 3070, `"7.5"` for RTX 2080).
 
-**4. Point CMake to the installation (if installed to a non-default prefix)**
-```bash
-cmake .. -DOpenCV_DIR=/path/to/opencv/build
-```
+### Windows — pre-built binaries
+
+1. Download `opencv-4.11.0-windows.exe` from the [OpenCV releases page](https://github.com/opencv/opencv/releases/tag/4.11.0).
+2. Extract to e.g. `C:\opencv`.
+3. Add `C:\opencv\build\x64\vc16\bin` to `PATH`.
+4. Configure: `cmake .. -DOpenCV_DIR="C:\opencv\build"`
 
 ---
-
-### Windows
-
-#### Option A — Pre-built binaries (quickest, no CUDA support in OpenCV itself)
-
-1. Download the Windows installer from the [OpenCV releases page](https://github.com/opencv/opencv/releases/tag/4.11.0) — pick `opencv-4.11.0-windows.exe`.
-2. Run the installer and extract to e.g. `C:\opencv`.
-3. Add `C:\opencv\build\x64\vc16\bin` to your `PATH` environment variable.
-4. Pass the OpenCV CMake dir when configuring:
-```powershell
-cmake .. -G "Visual Studio 17 2022" -A x64 -DOpenCV_DIR="C:\opencv\build"
-```
-
-#### Option B — Build from source with CUDA support
-
-**Prerequisites:** Visual Studio 2022, CUDA Toolkit, CMake 3.28+, Git.
-
-**1. Download sources**
-```powershell
-Invoke-WebRequest -Uri https://github.com/opencv/opencv/archive/refs/tags/4.11.0.zip -OutFile opencv.zip
-Invoke-WebRequest -Uri https://github.com/opencv/opencv_contrib/archive/refs/tags/4.11.0.zip -OutFile opencv_contrib.zip
-Expand-Archive opencv.zip -DestinationPath .
-Expand-Archive opencv_contrib.zip -DestinationPath .
-```
-
-**2. Build and install**
-```powershell
-cd opencv-4.11.0
-mkdir build; cd build
-cmake .. `
-  -G "Visual Studio 17 2022" -A x64 `
-  -DCMAKE_BUILD_TYPE=Release `
-  -DOPENCV_EXTRA_MODULES_PATH="..\..\opencv_contrib-4.11.0\modules" `
-  -DWITH_CUDA=ON `
-  -DWITH_CUBLAS=ON `
-  -DCUDA_ARCH_BIN="8.9" `
-  -DCUDA_FAST_MATH=ON `
-  -DBUILD_opencv_python2=OFF `
-  -DBUILD_opencv_python3=OFF `
-  -DBUILD_EXAMPLES=OFF `
-  -DBUILD_TESTS=OFF `
-  -DBUILD_PERF_TESTS=OFF `
-  -DBUILD_DOCS=OFF `
-  -DCMAKE_INSTALL_PREFIX="C:\opencv-cuda"
-cmake --build . --config Release -j
-cmake --install . --config Release
-```
-
-**3. Point CMake to the installation**
-```powershell
-cmake .. -G "Visual Studio 17 2022" -A x64 -DOpenCV_DIR="C:\opencv-cuda"
-```
-
----
-
-### CMake Installation (Linux)
-```bash
-# For Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install cmake=3.28.*
-# If not available in default repositories, add Kitware's repository:
-wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/kitware.list >/dev/null
-sudo apt-get update
-sudo apt-get install cmake=3.28.*
-```
-
-```bash
-sudo apt-get update
-sudo apt-get install gcc-12 g++-12
-sudo apt-get install libgtk-3-dev pkg-config
-```
 
 ## Build
 
-TODO: Adjust the CUDA architecture in CMakeLists.txt (CMAKE_CUDA_ARCHITECTURES)
+> Adjust `CMAKE_CUDA_ARCHITECTURES` in `CMakeLists.txt` to match your GPU
+> (75 = Turing/RTX 20xx, 86 = Ampere/RTX 30xx, 89 = Ada/RTX 40xx).
 
-### Build on Linux
+### Linux
+
 ```bash
 mkdir build && cd build
 cmake ..
 cmake --build . -j $(nproc)
 ```
 
-### Build on Windows
+### Windows
+
 ```powershell
-mkdir build
-cd build
+mkdir build; cd build
 cmake .. -G "Visual Studio 17 2022" -A x64
 cmake --build . --config Release
 ```
 
+---
+
 ## Portable Binary (Linux)
 
-The CMakeLists.txt includes support for creating a self-contained binary using `staticx`, which bundles all dependencies (OpenCV, CUDA runtime, libstdc++) into a single executable.
-
-### Prerequisites
 ```bash
-sudo apt install patchelf
-pip install staticx
+sudo apt install patchelf && pip install staticx
+
+mkdir build && cd build && cmake .. && cmake --build . -j $(nproc)
+# Portable binary: build/cuda-webcam-filter-portable
 ```
 
-### Build Portable Binary
-```bash
-mkdir build && cd build
-cmake ..
-cmake --build . -j $(nproc)
-# The portable binary will be at: cuda-webcam-filter-portable
-```
-
-The resulting `cuda-webcam-filter-portable` binary can be distributed to other Linux systems without requiring OpenCV, CUDA, or specific libstdc++ versions to be pre-installed.
-
-### Headless Mode
-
-The binary supports headless operation (no display server required) for cloud/container environments:
-
-```bash
-# Process image without display
-./cuda-webcam-filter-portable --input image --path photo.jpg --filter hdr --save
-
-# Process video to file without display
-./cuda-webcam-filter-portable --input video --path input.mp4 --filter emboss --save --out output.mp4
-```
-
-No display output is shown when using `--save` with image/video/synthetic inputs.
+---
 
 ## Testing
-The project includes unit tests and functional tests which can be enabled during the build:
+
 ```bash
 cmake .. -DRUN_UNIT_TESTS=ON
-make
-cd tests/unit_tests/
-ctest
+cmake --build . -j $(nproc)
+cd tests/unit_tests && ctest
 ```
-
-## Project Structure
-```
-cuda-webcam-filter/
-├── CMakeLists.txt           # Main build configuration
-├── README.md                # Project documentation
-├── src/
-│   ├── main.cpp             # Application entry point
-│   ├── kernels/
-│   │   ├── convolution_kernels.cu  # CUDA implementation
-│   │   └── kernels.h        # Kernel interfaces
-│   ├── utils/
-│   │   ├── input_handler.cpp  # Input/output handling
-│   │   ├── input_handler.h
-│   │   ├── filter_utils.cpp    # Filter creation utilities
-│   │   ├── filter_utils.h
-│   │   └── version.h.in        # Version template
-│   └── input_args_parser/
-│       ├── input_args_parser.cpp  # Command line argument parsing
-│       └── input_args_parser.h
-├── tests/
-│   ├── unit_tests/
-│   │   ├── CMakeLists.txt
-│   │   ├── test_convolution.cpp
-│   │   └── test_utils.cpp
-│   └── functional_tests/
-│       ├── CMakeLists.txt
-│       └── test_filters.cpp
-```
-
-## Example: Adding a New Filter
-
-### Adding a Convolution Filter
-
-To add a new convolution-based filter:
-
-1. Add a new filter type to the `FilterType` enum in `filter_utils.h`
-2. Add the filter mapping in `stringToFilterType()` in `filter_utils.cpp`
-3. Implement the kernel creation in `createFilterKernel()` in `filter_utils.cpp`
-4. Both CPU and GPU implementations will automatically use the kernel
-
-### Adding a Pixel-wise Filter (like HDR)
-
-To add a new pixel-wise filter (e.g., color grading, tone mapping):
-
-1. Add a new filter type and parameter struct in `filter_utils.h`
-2. Add CPU implementation (e.g., `applyFilterNameCPU()`) in `filter_utils.cpp`
-3. Add GPU kernel in `convolution_kernels.cu` with corresponding `applyFilterNameGPU()`
-4. Add to `FilterType` enum and `stringToFilterType()` mapping
-5. Update command-line parser in `input_args_parser.cpp` to handle new parameters
-6. Update `main.cpp` to route to new filter when selected
-
-## Performance Considerations
-
-### Convolution Filters
-- The provided convolution kernel is optimized for readability but can be further optimized:
-  - Consider using shared memory to reduce global memory accesses
-  - Explore using texture memory for input images
-  - Implement separable convolution for certain filters (like Gaussian blur)
-
-### HDR Tonemapping
-- Current implementation uses per-pixel operations with global memory access
-- Potential optimizations:
-  - Use shared memory for intermediate calculations
-  - Vectorize operations using CUDA intrinsics
-  - Consider reduced precision (fp16) for faster computation on compatible GPUs
-
-### Profiling
-- Use NVIDIA's profiling tools to identify bottlenecks:
-  - `nvidia-smi`: Monitor GPU memory and utilization
-  - `nvprof` or `nsys`: Detailed kernel execution profiling
-  - Check for memory bandwidth limitations vs. compute limitations

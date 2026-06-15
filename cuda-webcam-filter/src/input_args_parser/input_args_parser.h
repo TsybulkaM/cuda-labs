@@ -26,6 +26,19 @@ struct FilterOptions {
   float gamma      = 1.0f;
   float saturation = 1.0f;
   int   tonemapAlgo = 0;   // 0=reinhard  1=drago  2=mantiuk
+
+  // ---- Pipeline mode -------------------------------------------------------
+  // When pipelineSpec is non-empty the app runs in pipeline mode.
+  // Format: "filterType[:kernelSize[:intensity]],..."
+  // e.g.  "blur:3:1.0,sharpen:5:2.0,edge:3:1.5"
+  // HDR stages inherit the global exposure/gamma/saturation/tonemapAlgo values.
+  std::string pipelineSpec;
+  bool singleStream = false;  // force single CUDA stream (for comparison)
+  bool showTimings  = false;  // draw per-stage timing overlay
+
+  // ---- Wipe transition (pipeline mode only) --------------------------------
+  bool  wipeTransition = false;
+  float wipeSpeed      = 0.3f;  // full left-to-right sweep per second
 };
 
 class InputArgsParser {

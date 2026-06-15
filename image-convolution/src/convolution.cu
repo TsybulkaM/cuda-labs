@@ -122,7 +122,6 @@ __global__ void convolutionKernelSeparableHorizontal(
     output[outIdx + c] = sum[c];
 }
 
-// Separable filter: vertical pass (1D filter applied down columns)
 __global__ void
 convolutionKernelSeparableVertical(const float *input, uint8_t *output,
                                    const int width, const int height,
